@@ -9,7 +9,7 @@ setup (
     name='sphero_sprk',
     version='0.0.1',
     description="Python Module that commands Sphero SPRK+",
-    url='',
+    url='https://github.com/CMU-ARM/sphero_sprk',
     author= "Xiang Zhi Tan",
     author_email = "zhi.tan@ri.cmu.edu",
     keywords = ['Sphero','SPRK'],
