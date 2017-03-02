@@ -2,6 +2,9 @@ Sphero_SPRK
 ============
 An python module that connects with Sphero SPRK+. Under development
 
+Requirements:
+- linux and python3 only
+
 Usage Example:
 ```
 orb = Sphero("C8:A2:4D:7D:FA:4F")
