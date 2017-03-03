@@ -7,7 +7,7 @@ from setuptools import setup, find_packages
 
 setup (
     name='sphero_sprk',
-    version='0.0.1',
+    version='0.1.0',
     description="Python Module that commands Sphero SPRK+",
     url='https://github.com/CMU-ARM/sphero_sprk',
     author= "Xiang Zhi Tan",
@@ -20,6 +20,12 @@ setup (
     ],
     install_requires=[
        'bluepy',
+       'pyyaml'
     ],
-    include_package_data=True
+    #packages=find_packages(exclude=['docs', 'tests*','res']),
+    packages=['sphero_sprk'],
+    package_data={
+        'sphero_sprk':['data/*.yaml']
+    },
+    #include_package_data=True
 )

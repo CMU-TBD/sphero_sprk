@@ -7,7 +7,7 @@ import os
 
 import bluepy
 import yaml
-from util import *
+from .util import *
 
 #should it be in a different format?
 RobotControlService = "22bb746f2ba075542d6f726568705327"
@@ -127,7 +127,7 @@ class Sphero(object):
         self._seq_counter = 0
         self._stream_rate = 10
         #load the mask list
-        with open(os.path.join(os.path.dirname(__file__),'..','res','mask_list.yaml'),'r') as mask_file:
+        with open(os.path.join(os.path.dirname(__file__),'data','mask_list.yaml'),'r') as mask_file:
             self._mask_list = yaml.load(mask_file)
         self._curr_data_mask = bytes.fromhex("0000 0000")
 

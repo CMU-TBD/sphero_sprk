@@ -3,16 +3,28 @@ Sphero_SPRK
 An python module that connects with Sphero SPRK+. Under development
 
 Requirements:
-- linux and python3 only
+--------------------
+- Linux (bluepy & bluez dependence)
+- \>= python3.3 
 
-Usage Example:
-```
-orb = Sphero("C8:A2:4D:7D:FA:4F")
-orb.connect()
-orb.set_rgb_led(255,0,0)
-```
+Installation
+--------------------
+To install the latest released version:
 
-Currently supported commands:
+	$ pip install sphero_sprk
+	$ cd <python site package>/bluepy
+	$ make
+
+Usage Example
+---------------------------
+
+	orb = Sphero("C8:A2:4D:7D:FA:4F")
+	orb.connect()
+	orb.set_rgb_led(255,0,0)
+
+
+Currently supported commands
+----------------------------------
  - set_rgb_led(red, green, blue)
  - get_rgb_led()
  - start_gyro_callback(callback function)
