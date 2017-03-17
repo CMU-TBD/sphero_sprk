@@ -4,6 +4,7 @@ import sys
 import time
 import binascii
 import os
+import threading
 
 import bluepy
 import yaml
@@ -41,6 +42,7 @@ class DelegateObj(bluepy.btle.DefaultDelegate):
         self._wait_list = {}
         self._data_group_callback = {}
         self._enabled_group = []
+        self._buffer_bytes = b''
 
     def register_callback(self, seq, callback):
         self._callback_dict[seq] = callbackl
@@ -67,19 +69,46 @@ class DelegateObj(bluepy.btle.DefaultDelegate):
             self._sphero_obj._device.waitForNotifications(1)
         return self._wait_list.pop(seq)
 
+    def wait_for_sim_response(self, seq, timeout=None):
+        #this is a dangerous function, it waits for a response in the handle notification part
+        self._wait_list[seq] = None;
+        while(self._wait_list[seq] == None):
+            self._sphero_obj._device.waitForNotifications(1)
+        data = self._wait_list.pop(seq)
+        return (len(data) == 6 and data[0] == 255)    
+
     def handleNotification(self, cHandle, data):
+
+        print(data)
+        #sometimes the data coming will be incomplete
+        self._buffer_bytes =  self._buffer_bytes + data
+        if(package_validator(self._buffer_bytes)):
+            data = self._buffer_bytes
+            self._buffer_bytes = b''
+        else:
+            #incomplete data pack
+            return
+
+
         #print("got notification with handle:{}".format(cHandle))
         #if(data[0] != 255):
             #raise Exception("Incoming package in wrong format")
-        #print(data)
+        #check if its a simple response,
+        print('complete:{}'.format(data))
+
         if(len(data) >= 3 and data[0] == 255):
             if(data[1] == 255):
                 #get the sequence number and check if a callback is assigned
                 if(data[3] in self._callback_dict):
                     self.handle_callbacks(data)
                 #check if we have it in the wait list
-                if(data[3] in self._wait_list):
+                elif(data[3] in self._wait_list):
                     self._wait_list[data[3]] = data
+                #simple response
+                elif(len(data) == 6 and data[0] == 255 and data[2] == 0):
+                    print("receive simple response for seq:{}".format(data[3]))
+                else:
+                    print("unknown response:{}".format(data))
                 #Sync Message
             elif(data[1] == 254):
                 ##print("receive async")
@@ -109,6 +138,14 @@ class DelegateObj(bluepy.btle.DefaultDelegate):
                             # might think about spliting this into a different thread
                             if group_key in self._data_group_callback:
                                 self._data_group_callback[group_key](info)
+                elif(data[2] == int.from_bytes(b'\x09','big')):
+                    #orbbasic error message:
+                    print("orbBasic Error Message:")
+                    print(data[2:])
+                elif(data[2] == int.from_bytes(b'\x0A','big')):
+                    print(data[2:])
+                else:
+                    print("unknown async response:{}".format(data))
             else:
                 pass
 
@@ -137,7 +174,11 @@ class Sphero(object):
         """
         self._device = bluepy.btle.Peripheral(self._addr, addrType=bluepy.btle.ADDR_TYPE_RANDOM)
         self._notifier = DelegateObj(self)
-        self._device.setDelegate(self._notifier)
+        #
+        #self._device.setDelegate(self._notifier)
+        self._notifier_thread = threading.Thread(target=self._device.setDelegate,args=(self._notifier,))    
+        self._notifier_thread.start()
+
         self._devModeOn()
         self._connected = True #Might need to change to be a callback format
         #get the command service
@@ -173,20 +214,25 @@ class Sphero(object):
         data - [bytes/str/int] an array of values with what to send. We will reformat int and string
         """
 
-        data = self._format_data_array(data)
+        data_list = self._format_data_array(data)
+        return self._send_command("ff","02",cmd,data_list)
+
+    def _send_command(self,sop2,did,cid,data_list):
+        
         sop1 = binascii.a2b_hex("ff")
-        sop2 = binascii.a2b_hex("ff")
-        did = binascii.a2b_hex("02")
-        cid = binascii.a2b_hex(cmd)
+        sop2 = binascii.a2b_hex(sop2)
+        did = binascii.a2b_hex(did)
+        cid = binascii.a2b_hex(cid)
         seq_val = self._get_sequence()
         seq = seq_val.to_bytes(1,"big")
-        dlen = (count_data_size(data)+1).to_bytes(1,"big")#add one for checksum
-        packet = [sop1,sop2,did,cid,seq,dlen] + data
+        dlen = (count_data_size(data_list)+1).to_bytes(1,"big")#add one for checksum
+        packet = [sop1,sop2,did,cid,seq,dlen] + data_list
         packet += [cal_packet_checksum(packet[2:]).to_bytes(1,'big')] #calculate the checksum
         #write the command to Sphero
-        #print("cmd:{} packet:{}".format(cmd,b"".join(packet)))
-        self._cmd_characteristics[CommandsCharacteristic].write(b"".join(packet)) 
-        return seq_val      
+        print("cmd:{} packet:{}".format(cid, b"".join(packet)))
+        self._cmd_characteristics[CommandsCharacteristic].write(b"".join(packet))
+        return seq_val        
+
 
     def sleep(self, timeout):
         """
@@ -215,8 +261,37 @@ class Sphero(object):
                     arr[i] = value.to_bytes(1,'big')
         return arr
 
+    """ CORE functionality """
 
-    def set_rgb_led(self, red, green, blue):
+    def ping(self):
+        return self._send_command("ff","00","01",[])
+
+    def version(self):
+        #NOTE returning weird data not sure what's wrong
+        seq_num = self._send_command("ff","00","02",[])
+        response = self._notifier.wait_for_resp(seq_num)
+        data_response = response[5:-1]
+        version_data = {}
+        version_data["RECV"] = hex(data_response[0])
+        version_data["MDL"] = hex(data_response[1])
+        version_data["HW"] = data_response[2]
+        version_data["MSA-ver"] = data_response[3]
+        version_data["MSA-rev"] = data_response[4]
+        version_data["BL"] = hex(data_response[5])
+
+    def get_device_name(self):
+        seq_num = self._send_command("ff","00","11",[])
+        response = self._notifier.wait_for_resp(seq_num)
+        name_data = {}
+        name_data["name"] = str(response[5:21],'utf-8').rstrip(' \t\r\n\0')
+        name_data["bta"] = str(response[21:33],'utf-8')
+        name_data["color"] = str(response[33:36],'utf-8')
+        return name_data
+
+
+    """ Sphero functionality """
+
+    def set_rgb_led(self, red, green, blue,block=True):
         """
         Set the color of Sphero's LED
 
@@ -225,7 +300,14 @@ class Sphero(object):
         blue - (int) Color of blue in range 0-255
         """
         data = [red, green, blue, 0]
-        self.command("20", data)
+        seq = self.command("20", data)
+
+        if(block):
+            return self._notifier.wait_for_sim_response(seq)
+        else:
+            return True
+
+
 
     def get_rgb_led(self):
         """
@@ -348,4 +430,89 @@ class Sphero(object):
         """
         data = [lmode, lpower, rmode, rpower]
         self.command("33",data)
+
+    """ About MACRO  """
+
+    def abort_macro(self, id_):
+        """
+        Abort the current macro with the given ID
+        id - (int) the ID of the macro to stop
+        """
+        data = [id_]
+        self.command("55",data)
+
+    def run_macro(self, id_):
+        """
+        Start the macro with the given ID
+        id_ - (int) the 8-bit ID of the macro
+        """
+        data = [id_]
+        self.command("50",data)
+
+    """ OrbBasic the programming language """
+
+    STORAGE_RAM = "00"
+    STORAGE_PERSISTENT = "01"
+
+    def erase_orb_basic_storage(self, area, block=True):
+        """
+        Erase any existing program in the stored area
+        area - (str) hex name of the area to be cleaned
+        """
+        data = [area]
+        seq = self.command("60", data)
+        if(block):
+            return self._notifier.wait_for_sim_response(seq)
+        else:
+            return True
+
+    def run_orb_basic_program(self, area, start_line):
+        """
+        Run a the orb_basic program stored in that area
+        area - (str) hex name of the area
+        start_line - (int) the decimal line number to start
+        """
+        data = [area,start_line.to_bytes(2,byteorder='big')]
+
+        seq = self.command("62", data)
+        return self._notifier.wait_for_sim_response(seq)
+
+    def abort_orb_basic_program(self):
+        """
+        Abort the orb_basic program
+        """
+        data = []
+        seq = self.command("63", data)
+        return self._notifier.wait_for_sim_response(seq)
+
+    def append_orb_basic_fragment(self, area,val):
+        """
+        Append the value into ht orb basic given the area
+        val - (list of strings) the command broken down into a list of hex values
+        area - (str) hex name of the area
+        """
+        val.insert(0, area)
+        data = val
+        seq = self.command("61",data)
+        if self._notifier.wait_for_sim_response(seq):
+            pass
+        else:
+            print("error in appending orbbasic fragments")
+
+    def append_orb_basic_line(self, area,code):
+        """
+        Append the line to the existing code
+        """
+        #first convert the line into list of bytes
+        code_list = []
+        for c in code:
+            code_list.append(bytes(c,encoding="UTF-8"))
+        if len(code_list) == 0:
+            code_list.append(b'\x00') # NULL in the end
+        #code_list.append(b'\x0a')#append the terminating line
+        #send it to next part of the program
+        self.append_orb_basic_fragment(area,code_list)
+
+
+
 

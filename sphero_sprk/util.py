@@ -9,6 +9,21 @@ def cal_packet_checksum(arr):
 		#print(value)
 	return 255-(value%256)
 
+
+def package_validator(data):
+	if(len(data) < 3):
+		return False
+	if(data[0] != 255):
+		return False
+	if(data[1] != 255 and data[1] != 254):
+		return False
+	#now we check the checksum
+	data_pack = data[2:-1] #from DID to second last, exclude checksum
+	checksum = cal_packet_checksum([data_pack])
+	return (checksum == data[-1])
+
+
+
 def OR_mask(b1, b2):
 	if(len(b1) != len(b2)):
 		raise Exception("OR bytes with different length")
