@@ -291,6 +291,29 @@ class Sphero(object):
 
     """ Sphero functionality """
 
+    def roll(self,speed,heading):
+        """
+        Roll the ball towards the heading
+
+        speed - (int) speed
+        heading - (int) which direction, 0 - 359
+        """
+        heading_bytes = heading.to_bytes(2,byteorder='big')
+        data = [speed,heading_bytes[0],heading_bytes[1], 1]
+        seq_num = self.command("30",data)
+
+
+    def boost(self):
+        raise NotImplementedError
+
+    def set_heading(self, heading):
+        """
+        change the heading of the robot
+        """
+        heading_bytes = heading.to_bytes(2,byteorder='big')
+        data = [heading_bytes[0],heading_bytes[1]]
+        seq_num = self.command("01",data)
+
     def set_rgb_led(self, red, green, blue,block=True):
         """
         Set the color of Sphero's LED
