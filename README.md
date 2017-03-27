@@ -32,3 +32,8 @@ Currently supported commands
  - start_imu_callback(callback function)
  - set_stabilization(bool)
  - set_raw_motor_values(lmode, lpower, rmode, rpower)
+ 
+ 
+ Common Errors
+ ----------------------------------------
+*  if program throws `FileNotFoundError: [Errno 2] No such file or directory: '/home/$USER/python3.4/site-packages/bluepy/bluepy-helper'.` Go to the directory where bluepy is located and run the makefile located in the root directory.
