@@ -1,5 +1,21 @@
 #!/usr/bin/python3
 
+from bluepy.btle import Scanner
+
+
+def search_for_sphero(second_time=1):
+	scanner = Scanner()
+	devices = scanner.scan(second_time)
+	sphero_list = []
+	for dev in devices:
+		#get the complete local name
+		local_name = dev.getValueText(9)
+		if local_name != None:
+			if local_name.startswith('SK-'):
+				sphero_list.append(dev.addr)
+	return sphero_list
+
+
 def cal_packet_checksum(arr):
 	value = 0;
 	for a in arr:
@@ -11,12 +27,16 @@ def cal_packet_checksum(arr):
 
 
 def package_validator(data):
-	if(len(data) < 3):
+	if(len(data) < 5):
 		return False
 	if(data[0] != 255):
 		return False
-	if(data[1] != 255 and data[1] != 254):
-		return False
+
+	#check dlen
+	if(data[4] != 255):
+		if(data[4] != len(data[4:-1])):
+			return False
+
 	#now we check the checksum
 	data_pack = data[2:-1] #from DID to second last, exclude checksum
 	checksum = cal_packet_checksum([data_pack])
