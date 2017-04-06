@@ -43,6 +43,7 @@ class DelegateObj(bluepy.btle.DefaultDelegate):
         self._data_group_callback = {}
         self._enabled_group = []
         self._buffer_bytes = b''
+        #self.start_listening_loop()
 
     def register_callback(self, seq, callback):
         self._callback_dict[seq] = callbackl
@@ -50,6 +51,15 @@ class DelegateObj(bluepy.btle.DefaultDelegate):
     def register_async_callback(self, group_name, callback):
         self._data_group_callback[group_name] = callback
         self._enabled_group = list(set(self._enabled_group) | set([group_name]))
+
+    def listener_loop(self):
+        while(self._listening_flag):
+            self._sphero_obj._device.waitForNotifications(1)
+
+    def start_listening_loop(self):
+            self._listening_flag = True
+            self._listening_thread = threading.Thread(target=self.listener_loop)
+            self._listening_thread.start()
 
     def handle_callbacks(self, packet):
         #unregister callback
@@ -66,6 +76,7 @@ class DelegateObj(bluepy.btle.DefaultDelegate):
         #this is a dangerous function, it waits for a response in the handle notification part
         self._wait_list[seq] = None;
         while(self._wait_list[seq] == None):
+            #time.sleep(0.5)
             self._sphero_obj._device.waitForNotifications(1)
         return self._wait_list.pop(seq)
 
@@ -73,6 +84,7 @@ class DelegateObj(bluepy.btle.DefaultDelegate):
         #this is a dangerous function, it waits for a response in the handle notification part
         self._wait_list[seq] = None;
         while(self._wait_list[seq] == None):
+            #time.sleep(0.5)
             self._sphero_obj._device.waitForNotifications(1)
         data = self._wait_list.pop(seq)
         return (len(data) == 6 and data[0] == 255)    
@@ -142,7 +154,6 @@ class DelegateObj(bluepy.btle.DefaultDelegate):
         #loop through it and see if it's valid
         while(len(self._buffer_bytes) > 0):
                 #split the data until it's a valid chunk
-                print(self._buffer_bytes)
                 index = 1
                 max_size = len(self._buffer_bytes)
                 data_single = self._buffer_bytes[:index]
@@ -162,7 +173,6 @@ class DelegateObj(bluepy.btle.DefaultDelegate):
                         break #because we don't have enough data to parse anything
                 #resize the new buffer
                 self._buffer_bytes = self._buffer_bytes[index:]
-                print(self._buffer_bytes)
 
                 #now we parse a single instant
                 self.parse_single_pack(data_single)           
@@ -299,6 +309,7 @@ class Sphero(object):
         """
         startTime = time.time()
         while(time.time() - startTime <= timeout):
+            #time.sleep(1)
             self._device.waitForNotifications(1)
 
 
@@ -337,6 +348,7 @@ class Sphero(object):
         version_data["MSA-ver"] = data_response[3]
         version_data["MSA-rev"] = data_response[4]
         version_data["BL"] = hex(data_response[5])
+        return version_data
 
     def get_device_name(self):
         seq_num = self._send_command("ff","00","11",[])

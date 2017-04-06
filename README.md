@@ -25,6 +25,14 @@ Usage Example
 
 Currently supported commands
 ----------------------------------
+ 
+ General
+ - ping()
+ - version()
+ - get_device_name()
+
+
+ Sphero
  - set_rgb_led(red, green, blue)
  - get_rgb_led()
  - start_gyro_callback(callback function)
@@ -32,3 +40,5 @@ Currently supported commands
  - start_imu_callback(callback function)
  - set_stabilization(bool)
  - set_raw_motor_values(lmode, lpower, rmode, rpower)
+ - set_heading(new_zero_heading_according_to_old_heading)
+ - roll(heading, speed)
