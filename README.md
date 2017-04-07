@@ -2,6 +2,7 @@ Sphero_SPRK
 ============
 An python module that connects with Sphero SPRK+. Under development
 
+
 Requirements:
 --------------------
 - Linux (bluepy & bluez dependence)
@@ -18,6 +19,8 @@ To install the latest released version:
 Usage Example
 ---------------------------
 
+	from sphero_sprk import Sphero	
+	
 	orb = Sphero("C8:A2:4D:7D:FA:4F")
 	orb.connect()
 	orb.set_rgb_led(255,0,0)
@@ -42,9 +45,17 @@ Currently supported commands
  - set_raw_motor_values(lmode, lpower, rmode, rpower)
  - set_heading(new_zero_heading_according_to_old_heading)
  - roll(heading, speed)
- 
- 
- Common Errors
- ----------------------------------------
-*  if program throws `FileNotFoundError: [Errno 2] No such file or directory: '/home/$USER/python3.4/site-packages/bluepy/bluepy-helper'.` Go to the directory where bluepy is located and run the makefile located in the root directory.
 
+
+ Common Errors
+ ---------------------------------------
+ 
+*  if program throws `FileNotFoundError: [Errno 2] No such file or directory: '/home/$USER/python3.4/site-packages/bluepy/bluepy-helper'.` Go to the directory where bluepy is installed(`/home/$USER/python3.4/site-packages/bluepy/`) and run the makefile located in the directory.
+*  if the program halts at the beginning, restarting the program a few times will solve the problem. There's a known issue with bluepy sometimes getting stuck at the initialization phase.
+
+Contact & License
+----------------------------------------------
+Created and Maintained by CMU Assistive Robots Lab
+Contact:  Zhi <zhi.tan@ri.cmu.edu>
+
+Licensed under the MIT license
