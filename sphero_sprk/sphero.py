@@ -91,6 +91,8 @@ class DelegateObj(bluepy.btle.DefaultDelegate):
 
     def parse_single_pack(self, data):
 
+        print(data)
+
         if(data[1] == 255):
             #get the sequence number and check if a callback is assigned
             if(data[3] in self._callback_dict):
@@ -277,14 +279,28 @@ class Sphero(object):
         characteristic = characteristic_dict[WakeCharacteristic]
         characteristic.write((1).to_bytes(1, 'big'),True)       
 
-    def command(self, cmd, data):
+    def command(self, cmd, data, resp=True):
         """
         cmd - (str) Hex String that is the command's code(ff, no need to put \\x in front)
         data - [bytes/str/int] an array of values with what to send. We will reformat int and string
-        """
-
+        resp - (bool) whether the command will only return after we get an acknowledgement from Sphero. If set to false, sphero will be set to NOT even send a response to save bandwidth
+        -----
+        
+        return - (tuple) A tuple with the first element being sequence number and second element being the response if blocked, None if not 
+        """      
+        #format data  
         data_list = self._format_data_array(data)
-        return self._send_command("ff","02",cmd,data_list)
+        #set the sop2 based on the blocking command
+        sop2 = "ff" if resp else "fe"
+        #send command
+        seq_num = self._send_command(sop2, "02", cmd, data_list)
+        #check if blocking
+        if(resp):
+            resp = self._notifier.wait_for_sim_response(seq_num)
+            #return the sequence number and response 
+            return (seq_num, resp)
+        else:
+            return (seq_num, None)
 
     def _send_command(self,sop2,did,cid,data_list):
         
@@ -362,45 +378,49 @@ class Sphero(object):
 
     """ Sphero functionality """
 
-    def roll(self,speed,heading):
+    def roll(self, speed, heading, resp=False):
         """
         Roll the ball towards the heading
 
         speed - (int) speed
         heading - (int) which direction, 0 - 359
+        resp - (bool) whether the code will wait for comfirmation from Sphero
         """
         heading_bytes = heading.to_bytes(2,byteorder='big')
         data = [speed,heading_bytes[0],heading_bytes[1], 1]
-        seq_num = self.command("30",data)
+        #send command
+        self._resp_command('30',data, resp=resp)
 
 
     def boost(self):
         raise NotImplementedError
 
-    def set_heading(self, heading):
+    def set_heading(self, heading, resp=False):
         """
         change the heading of the robot
+
+        heading - (int) heading in the range of 0-355
+        resp - (bool) Whether to receive comfirmation response from sphero
         """
         heading_bytes = heading.to_bytes(2,byteorder='big')
         data = [heading_bytes[0],heading_bytes[1]]
-        seq_num = self.command("01",data)
+        #send command
+        self._command("01",data, resp=resp)
 
-    def set_rgb_led(self, red, green, blue,block=True):
+
+    def set_rgb_led(self, red, green, blue, resp=False):
         """
         Set the color of Sphero's LED
 
         red - (int) Color of red in range 0-255
         green - (int) Color of green in range 0-255
         blue - (int) Color of blue in range 0-255
+        resp - (bool) whether the code will wait for comfirmation from Sphero
         """
+        #set data
         data = [red, green, blue, 0]
-        seq = self.command("20", data)
-
-        if(block):
-            return self._notifier.wait_for_sim_response(seq)
-        else:
-            return True
-
+        #send command
+        self.command("20", data, resp=resp)
 
 
     def get_rgb_led(self):
@@ -409,14 +429,15 @@ class Sphero(object):
         ----
         return - tuple of the color in RGB
         """
-        seq_num = self.command("22", [])
-        response = self._notifier.wait_for_resp(seq_num)
+
+        #set the correct command
+        (seq_num, resp) = self.command("22",[])
         #parse the response packet and make sure it's correct
-        if response and response[4] == 4:
-            MRSP = response[2]
-            red = response[5]
-            green = response[6]
-            blue = response[7]
+        if resp and resp[4] == 4:
+            MRSP = resp[2]
+            red = resp[5]
+            green = resp[6]
+            blue = resp[7]
             return (red, green, blue)
         else:
             return None
@@ -450,7 +471,7 @@ class Sphero(object):
         PCNT = (0).to_bytes(1,'big')
         #MASK2 = (mask2).to_bytes(4,'big')
         data = [N,M, mask1 ,PCNT,mask2]
-        self.command("11",data)
+        self.command("11",data, resp=True) #make sure sphero actully receive this
 
 
     def _stop_data_stream(self, group_name):
@@ -504,27 +525,30 @@ class Sphero(object):
     def stop_IMU_callback(self):
         self._stop_data_stream("IMU")
 
-    def set_stabilization(self,bool_flag):
+    def set_stabilization(self,bool_flag, resp=False):
         """
         Enable/Disable stabilization of Sphero
 
         bool_flag - (bool) stabilization on/off
+        resp[Optional] - (bool) whether the code will wait for comfirmation from Sphero, default to False
         """
         data = ["01" if bool_flag else "00"]
-        self.command("02",data)
+        self.command("02",data, resp=resp)
 
 
-    def set_raw_motor_values(self,lmode,lpower,rmode,rpower):
+    def set_raw_motor_values(self,lmode,lpower,rmode,rpower, resp=False):
         """
         Set the raw motor values of Sphero
         lmode - (str) the hex string(without \\x) of the mode
         lpower - (int) the value of the power from 0-255
         rmode - (str) the hex string(without \\x) of the mode
         rpower - (int) the value of the power from 0-255
+        resp[Optional] - (bool) whether the code will wait for comfirmation from Sphero, default to False
         """
         data = [lmode, int(lpower), rmode, int(rpower)]
-        #print(data)
-        self.command("33",data)
+        
+        #By default, we going to cancel it
+        self.command("33",data, resp=resp) 
 
     """ About MACRO  """
 

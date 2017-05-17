@@ -7,7 +7,7 @@ from setuptools import setup, find_packages
 
 setup (
     name='sphero_sprk',
-    version='0.1.4',
+    version='0.2.0',
     description="Python Module that commands Sphero SPRK+",
     url='https://github.com/CMU-ARM/sphero_sprk',
     author= "Xiang Zhi Tan",
