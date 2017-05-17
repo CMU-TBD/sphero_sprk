@@ -35,7 +35,7 @@ class DelegateObj(bluepy.btle.DefaultDelegate):
     """
     Delegate object that get calls when there is a notification
     """
-    def __init__(self, sphero_obj):
+    def __init__(self, sphero_obj,lock):
         bluepy.btle.DefaultDelegate.__init__(self)
         self._sphero_obj = sphero_obj
         self._callback_dict = {}
@@ -43,7 +43,7 @@ class DelegateObj(bluepy.btle.DefaultDelegate):
         self._data_group_callback = {}
         self._enabled_group = []
         self._buffer_bytes = b''
-        #self.start_listening_loop()
+        self._notification_lock = lock
 
     def register_callback(self, seq, callback):
         self._callback_dict[seq] = callbackl
@@ -51,15 +51,6 @@ class DelegateObj(bluepy.btle.DefaultDelegate):
     def register_async_callback(self, group_name, callback):
         self._data_group_callback[group_name] = callback
         self._enabled_group = list(set(self._enabled_group) | set([group_name]))
-
-    def listener_loop(self):
-        while(self._listening_flag):
-            self._sphero_obj._device.waitForNotifications(1)
-
-    def start_listening_loop(self):
-            self._listening_flag = True
-            self._listening_thread = threading.Thread(target=self.listener_loop)
-            self._listening_thread.start()
 
     def handle_callbacks(self, packet):
         #unregister callback
@@ -76,22 +67,22 @@ class DelegateObj(bluepy.btle.DefaultDelegate):
         #this is a dangerous function, it waits for a response in the handle notification part
         self._wait_list[seq] = None;
         while(self._wait_list[seq] == None):
-            #time.sleep(0.5)
-            self._sphero_obj._device.waitForNotifications(1)
+            #time.sleep(0.1)
+            with self._notification_lock:
+                self._sphero_obj._device.waitForNotifications(0.05)
         return self._wait_list.pop(seq)
 
     def wait_for_sim_response(self, seq, timeout=None):
         #this is a dangerous function, it waits for a response in the handle notification part
         self._wait_list[seq] = None;
         while(self._wait_list[seq] == None):
-            #time.sleep(0.5)
-            self._sphero_obj._device.waitForNotifications(1)
+            #time.sleep(0.1)
+            with self._notification_lock:
+                self._sphero_obj._device.waitForNotifications(0.05)
         data = self._wait_list.pop(seq)
         return (len(data) == 6 and data[0] == 255)    
 
     def parse_single_pack(self, data):
-
-        print(data)
 
         if(data[1] == 255):
             #get the sequence number and check if a callback is assigned
@@ -148,8 +139,6 @@ class DelegateObj(bluepy.btle.DefaultDelegate):
 
     def handleNotification(self, cHandle, data):
 
-
-
         #merge the data with previous incomplete instance
         self._buffer_bytes =  self._buffer_bytes + data
 
@@ -177,39 +166,7 @@ class DelegateObj(bluepy.btle.DefaultDelegate):
                 self._buffer_bytes = self._buffer_bytes[index:]
 
                 #now we parse a single instant
-                self.parse_single_pack(data_single)           
-       
-
-        # #loop through it and see if it's valid
-
-
-        # #print(data)
-        # #sometimes the data coming will be incomplete
-        # self._buffer_bytes =  self._buffer_bytes + data
-        # if(package_validator(self._buffer_bytes)):
-        #     data = self._buffer_bytes
-        #     self._buffer_bytes = b''
-        # else:
-        #     #incomplete data pack
-        #     print("incomplete packages")
-        #     return
-
-
-        # #print("got notification with handle:{}".format(cHandle))
-        # #if(data[0] != 255):
-        #     #raise Exception("Incoming package in wrong format")
-        # #check if its a simple response,
-        # print('complete:{}'.format(data))
-
-        # if(len(data) >= 3 and data[0] == 255):
-
-
-        #     data_queue = data
-        #     #the problem is that sometimes the data is queued up and you need to deal with it one by one
-        #     while(len(data_queue) > 0):
-
-
-               
+                self.parse_single_pack(data_single)
 
 
 class Sphero(object):
@@ -239,16 +196,17 @@ class Sphero(object):
             self._mask_list = yaml.load(mask_file)
         self._curr_data_mask = bytes.fromhex("0000 0000")
 
+        self._notification_lock = threading.RLock()
+        #start a listener loop
+
     def connect(self):
         """
         Connects the sphero with the address given in the constructor
         """
         self._device = bluepy.btle.Peripheral(self._addr, addrType=bluepy.btle.ADDR_TYPE_RANDOM)
-        self._notifier = DelegateObj(self)
-        #
-        #self._device.setDelegate(self._notifier)
-        self._notifier_thread = threading.Thread(target=self._device.setDelegate,args=(self._notifier,))    
-        self._notifier_thread.start()
+        self._notifier = DelegateObj(self, self._notification_lock)
+        #set notifier to be notified
+        self._device.withDelegate(self._notifier)
 
         self._devModeOn()
         self._connected = True #Might need to change to be a callback format
@@ -259,7 +217,12 @@ class Sphero(object):
         for characteristic in characteristic_list:
             uuid_str = binascii.b2a_hex(characteristic.uuid.binVal).decode('utf-8')
             self._cmd_characteristics[uuid_str] = characteristic
-        
+
+        self._listening_flag = True
+        self._listening_thread = threading.Thread(target=self._listening_loop)
+        self._listening_thread.start()
+
+
     def _devModeOn(self):
         """
         A sequence of read/write that enables the developer mode
@@ -296,7 +259,7 @@ class Sphero(object):
         seq_num = self._send_command(sop2, "02", cmd, data_list)
         #check if blocking
         if(resp):
-            resp = self._notifier.wait_for_sim_response(seq_num)
+            resp = self._notifier.wait_for_resp(seq_num)
             #return the sequence number and response 
             return (seq_num, resp)
         else:
@@ -315,19 +278,25 @@ class Sphero(object):
         packet += [cal_packet_checksum(packet[2:]).to_bytes(1,'big')] #calculate the checksum
         #write the command to Sphero
         #print("cmd:{} packet:{}".format(cid, b"".join(packet)))
-        self._cmd_characteristics[CommandsCharacteristic].write(b"".join(packet))
+        with self._notification_lock:
+            self._cmd_characteristics[CommandsCharacteristic].write(b"".join(packet))
         return seq_val        
 
 
-    def sleep(self, timeout):
-        """
-        Sleep function that allows the notifications to be fired
-        """
-        startTime = time.time()
-        while(time.time() - startTime <= timeout):
-            #time.sleep(1)
-            self._device.waitForNotifications(1)
+    # def sleep(self, timeout):
+    #     """
+    #     Sleep function that allows the notifications to be fired
+    #     """
+    #     startTime = time.time()
+    #     while(time.time() - startTime <= timeout):
+    #         #time.sleep(1)
+    #         #self._device.waitForNotifications(1)
 
+    def _listening_loop(self):
+        pass
+        #while(self._listening_flag):
+            #with self._notification_lock:
+                #self._device.waitForNotifications(0.001)
 
     def _get_sequence(self):
         val = self._seq_counter
@@ -389,7 +358,7 @@ class Sphero(object):
         heading_bytes = heading.to_bytes(2,byteorder='big')
         data = [speed,heading_bytes[0],heading_bytes[1], 1]
         #send command
-        self._resp_command('30',data, resp=resp)
+        self.command('30',data, resp=resp)
 
 
     def boost(self):
@@ -462,7 +431,6 @@ class Sphero(object):
         #send the mask as data
         self._stream_rate = rate
         self._send_data_command(rate,self._curr_data_mask,(0).to_bytes(4,'big'))
-
 
     def _send_data_command(self,rate,mask1,mask2,sample=1):
         N = ((int)(400/rate)).to_bytes(2,byteorder='big')
