@@ -424,10 +424,7 @@ class Sphero(object):
         """
         heading_bytes = heading.to_bytes(2,byteorder='big')
         data = [heading_bytes[0],heading_bytes[1]]
-        print(data)
-        print(heading_bytes)
-        print("bytes?")
-        self.command("01",data, resp=resp)
+        print(data)        self.command("01",data, resp=resp)
         #send command
 
 
